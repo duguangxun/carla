@@ -1,12 +1,25 @@
 // Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
+using System;
 using System.IO;
 using UnrealBuildTool;
 
 public class Carla : ModuleRules
 {
+  private bool IsWindows(ReadOnlyTargetRules Target)
+  {
+    return (Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32);
+  }
+
   public Carla(ReadOnlyTargetRules Target) : base(Target)
   {
+    PrivatePCHHeaderFile = "Carla.h";
+
+    if (IsWindows(Target))
+    {
+      bEnableExceptions = true;
+    }
+
     PublicIncludePaths.AddRange(
       new string[] {
         // ... add public include paths required here ...
@@ -33,13 +46,19 @@ public class Carla : ModuleRules
       new string[]
       {
         "AIModule",
+        "AssetRegistry",
         "CoreUObject",
         "Engine",
-        "PhysXVehicles",
-        "Slate",
-        "SlateCore",
+        "Foliage",
+        "ImageWriteQueue",
+        "Json",
+        "JsonUtilities",
         "Landscape",
-        "Foliage"
+        "PhysX",
+        "PhysXVehicles",
+        "PhysXVehicleLib",
+        "Slate",
+        "SlateCore"
         // ... add private dependencies that you statically link with here ...
       }
       );
@@ -52,11 +71,6 @@ public class Carla : ModuleRules
       );
 
     AddCarlaServerDependency(Target);
-  }
-
-  private bool IsWindows(ReadOnlyTargetRules Target)
-  {
-    return (Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32);
   }
 
   private bool UseDebugLibs(ReadOnlyTargetRules Target)
@@ -76,19 +90,15 @@ public class Carla : ModuleRules
 
   delegate string ADelegate(string s);
 
+  private void AddBoostLibs(string LibPath)
+  {
+    string [] files = Directory.GetFiles(LibPath, "*boost*.lib");
+    foreach (string file in files) PublicAdditionalLibraries.Add(file);
+  }
+
   private void AddCarlaServerDependency(ReadOnlyTargetRules Target)
   {
-    string CarlaServerInstallPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "../../CarlaServer"));
-
-    string CarlaServerLib;
-    if (UseDebugLibs(Target))
-    {
-      CarlaServerLib = "carlaserverd";
-    }
-    else
-    {
-      CarlaServerLib = "carlaserver";
-    }
+    string LibCarlaInstallPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "../../CarlaDependencies"));
 
     ADelegate GetLibName = (string BaseName) => {
       if (IsWindows(Target))
@@ -104,23 +114,40 @@ public class Carla : ModuleRules
     // Link dependencies.
     if (IsWindows(Target))
     {
-      // Auto-links boost libraries in folder.
-      PublicLibraryPaths.Add(Path.Combine(CarlaServerInstallPath, "lib"));
+      AddBoostLibs(Path.Combine(LibCarlaInstallPath, "lib"));
+      PublicAdditionalLibraries.Add(Path.Combine(LibCarlaInstallPath, "lib", GetLibName("rpc")));
 
-      PublicAdditionalLibraries.Add(Path.Combine(CarlaServerInstallPath, "lib", GetLibName("libprotobuf")));
-      PublicAdditionalLibraries.Add(Path.Combine(CarlaServerInstallPath, "lib", GetLibName(CarlaServerLib)));
+      if (UseDebugLibs(Target))
+      {
+        PublicAdditionalLibraries.Add(Path.Combine(LibCarlaInstallPath, "lib", GetLibName("carla_server_debug")));
+      }
+      else
+      {
+        PublicAdditionalLibraries.Add(Path.Combine(LibCarlaInstallPath, "lib", GetLibName("carla_server")));
+      }
     }
     else
     {
-      PublicAdditionalLibraries.Add(Path.Combine(CarlaServerInstallPath, "lib", GetLibName("c++abi")));
-      PublicAdditionalLibraries.Add(Path.Combine(CarlaServerInstallPath, "lib", GetLibName("boost_system")));
-      PublicAdditionalLibraries.Add(Path.Combine(CarlaServerInstallPath, "lib", GetLibName("protobuf")));
-      PublicAdditionalLibraries.Add(Path.Combine(CarlaServerInstallPath, "lib", GetLibName(CarlaServerLib)));
+      PublicAdditionalLibraries.Add(Path.Combine(LibCarlaInstallPath, "lib", GetLibName("rpc")));
+      if (UseDebugLibs(Target))
+      {
+        PublicAdditionalLibraries.Add(Path.Combine(LibCarlaInstallPath, "lib", GetLibName("carla_server_debug")));
+      }
+      else
+      {
+        PublicAdditionalLibraries.Add(Path.Combine(LibCarlaInstallPath, "lib", GetLibName("carla_server")));
+      }
     }
 
     // Include path.
-    string CarlaServerIncludePath = Path.Combine(CarlaServerInstallPath, "include");
-    PublicIncludePaths.Add(CarlaServerIncludePath);
-    PrivateIncludePaths.Add(CarlaServerIncludePath);
+    string LibCarlaIncludePath = Path.Combine(LibCarlaInstallPath, "include");
+
+    PublicIncludePaths.Add(LibCarlaIncludePath);
+    PrivateIncludePaths.Add(LibCarlaIncludePath);
+
+    PublicDefinitions.Add("ASIO_NO_EXCEPTIONS");
+    PublicDefinitions.Add("BOOST_NO_EXCEPTIONS");
+    PublicDefinitions.Add("LIBCARLA_NO_EXCEPTIONS");
+    PublicDefinitions.Add("PUGIXML_NO_EXCEPTIONS");
   }
 }

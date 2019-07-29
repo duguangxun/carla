@@ -6,55 +6,71 @@
 
 #pragma once
 
-#include "GameFramework/Actor.h"
+#include "Carla/Game/CarlaEpisode.h"
+#include "Carla/Sensor/DataStream.h"
 
-#include "Sensor/SensorDataSink.h"
-#include "Settings/SensorDescription.h"
+#include "GameFramework/Actor.h"
 
 #include "Sensor.generated.h"
 
+struct FActorDescription;
+
 /// Base class for sensors.
-UCLASS(Abstract, hidecategories=(Collision, Attachment, Actor))
+UCLASS(Abstract, hidecategories = (Collision, Attachment, Actor))
 class CARLA_API ASensor : public AActor
 {
   GENERATED_BODY()
 
 public:
 
-  ASensor(const FObjectInitializer& ObjectInitializer);
+  ASensor(const FObjectInitializer &ObjectInitializer);
 
-  uint32 GetId() const
+  void SetEpisode(const UCarlaEpisode &InEpisode)
   {
-    return Id;
+    Episode = &InEpisode;
   }
 
-  void AttachToActor(AActor *Actor);
+  virtual void Set(const FActorDescription &Description);
 
-  void SetSensorDataSink(TSharedPtr<ISensorDataSink> InSensorDataSink)
+  /// Replace the FDataStream associated with this sensor.
+  ///
+  /// @warning Do not change the stream after BeginPlay. It is not thread-safe.
+  void SetDataStream(FDataStream InStream)
   {
-    SensorDataSink = InSensorDataSink;
+    Stream = std::move(InStream);
+  }
+
+  /// Return the token that allows subscribing to this sensor's stream.
+  auto GetToken() const
+  {
+    return Stream.GetToken();
   }
 
 protected:
 
-  void Set(const USensorDescription &SensorDescription)
+  void PostActorCreated() override;
+
+  void EndPlay(EEndPlayReason::Type EndPlayReason) override;
+
+  const UCarlaEpisode &GetEpisode() const
   {
-    Id = SensorDescription.GetId();
+    check(Episode != nullptr);
+    return *Episode;
   }
 
-  void WriteSensorData(const FSensorDataView &SensorData) const
+  /// Return the FDataStream associated with this sensor.
+  ///
+  /// You need to provide a reference to self, this is necessary for template
+  /// deduction.
+  template <typename SensorT>
+  FAsyncDataStream GetDataStream(const SensorT &Self)
   {
-    if (SensorDataSink.IsValid()) {
-      SensorDataSink->Write(SensorData);
-    } else {
-      UE_LOG(LogCarla, Warning, TEXT("Sensor %d has no data sink."), Id);
-    }
+    return Stream.MakeAsyncDataStream(Self, GetEpisode().GetElapsedGameTime());
   }
 
 private:
 
-  UPROPERTY(VisibleAnywhere)
-  uint32 Id;
+  FDataStream Stream;
 
-  TSharedPtr<ISensorDataSink> SensorDataSink = nullptr;
+  const UCarlaEpisode *Episode = nullptr;
 };
